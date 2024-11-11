@@ -213,6 +213,7 @@ const HockeyStatsDashboard = () => {
     setError('');
     
     try {
+      // Fetch data from the local API endpoint instead of an external URL
       const response = await fetch('/api/hockey-stats');
       
       if (!response.ok) {
@@ -244,18 +245,13 @@ const HockeyStatsDashboard = () => {
     let aVal = a[sortField];
     let bVal = b[sortField];
 
-    // If the values are strings, try to convert them to numbers
-    if (typeof aVal === 'string') {
-      aVal = parseFloat(aVal) || aVal;
-    }
-    if (typeof bVal === 'string') {
-      bVal = parseFloat(bVal) || bVal;
-    }
+    if (typeof aVal === 'string') aVal = parseFloat(aVal) || aVal;
+    if (typeof bVal === 'string') bVal = parseFloat(bVal) || bVal;
 
     if (sortDirection === 'asc') {
-      return (aVal > bVal ? 1 : -1);
+      return aVal > bVal ? 1 : -1;
     } else {
-      return (aVal < bVal ? 1 : -1);
+      return aVal < bVal ? 1 : -1;
     }
   });
 
@@ -332,7 +328,6 @@ const HockeyStatsDashboard = () => {
           </Card>
         ))}
 
-        {/* Legend */}
         <Card className="bg-slate-800 border-slate-700 mb-8">
           <CardHeader>
             <CardTitle className="text-white">Stat Highlighting Legend</CardTitle>
