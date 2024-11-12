@@ -1,22 +1,26 @@
+// hockey-stats-dashboard.tsx
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowUpDown, RefreshCcw, Trophy } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowUpDown, RefreshCcw, Trophy, Upload } from 'lucide-react';
+import { StatHistory, PlayerStats, StatThresholds } from '../types';
 
 const HockeyStatsDashboard = () => {
-  const [stats, setStats] = useState<{ [key: string]: string | number }[]>([]);
+  const [currentStats, setCurrentStats] = useState<StatHistory | null>(null);
+  const [previousStats, setPreviousStats] = useState<StatHistory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [sortField, setSortField] = useState('');
-  const [sortDirection, setSortDirection] = useState('asc');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [showComparison, setShowComparison] = useState(false);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
 
   // Header name mappings
-  type HeaderNames = { [key: string]: string };
-  const headerNames: HeaderNames = {
+  const headerNames: { [key: string]: string } = {
     name: 'Player Name',
-    // General Stats
     gp: 'Games Played',
     wins: 'Wins',
     losses: 'Losses',
@@ -25,7 +29,6 @@ const HockeyStatsDashboard = () => {
     record: 'Record',
     winnerByDnf: 'Wins by DNF',
     DNF: 'DNF',
-    // Scoring
     goals: 'Goals',
     assists: 'Assists',
     points: 'Points',
@@ -34,7 +37,6 @@ const HockeyStatsDashboard = () => {
     ppg: 'Power Play Goals',
     shg: 'Short Handed Goals',
     hattricks: 'Hat Tricks',
-    // Shooting
     shots: 'Shots',
     shotpct: 'Shot %',
     shotspg: 'Shots/Game',
@@ -42,61 +44,43 @@ const HockeyStatsDashboard = () => {
     shotonnetpct: 'Shots on Net %',
     scrnchances: 'Scoring Chances',
     scrngoals: 'Screen Goals',
-    // Defense
     hits: 'Hits',
     hitspg: 'Hits/Game',
     bs: 'Blocked Shots',
     takeaways: 'Takeaways',
     interceptions: 'Interceptions',
     pkclearzone: 'PK Clear Zone',
-    // Faceoffs
     fo: 'Faceoffs',
     fow: 'Faceoffs Won',
     fol: 'Faceoffs Lost',
     fop: 'Faceoff %',
-    // Penalties
     pim: 'Penalty Minutes',
     fights: 'Fights',
     fightswon: 'Fights Won',
     penaltiesdrawn: 'Penalties Drawn',
-    // Possession
     possession: 'Possession Time',
     giveaways: 'Giveaways',
     passes: 'Passes',
     passattempts: 'Pass Attempts',
     passpct: 'Pass %',
     saucerpasses: 'Saucer Passes',
-    // Breakaways
     breakaways: 'Breakaways',
     breakawaypct: 'Breakaway %',
     brkgoals: 'Breakaway Goals',
     penaltyshotgoals: 'Penalty Shot Goals',
     penaltyattempts: 'Penalty Shot Attempts',
     penaltyshotpct: 'Penalty Shot %',
-    // Other
     toi: 'Time on Ice',
     plusmin: 'Plus/Minus',
     dekes: 'Dekes',
     dekesmade: 'Successful Dekes',
     offsides: 'Offsides',
     offsidespg: 'Offsides/Game',
-    deflections: 'Deflections',
-    // X-Factor Stats
-    xfactor_zoneability_goals: 'Zone Ability Goals',
-    xfactor_zoneability_assists: 'Zone Ability Assists',
-    xfactor_zoneability_saves: 'Zone Ability Saves',
-    xfactor_zoneability_hits: 'Zone Ability Hits',
-    xfactor_zoneability_stick_checks: 'Zone Ability Stick Checks',
-    xfactor_zoneability_times_used: 'Zone Ability Times Used',
-    xfactor_superstarability_goals: 'Superstar Ability Goals',
-    xfactor_superstarability_assists: 'Superstar Ability Assists',
-    xfactor_superstarability_saves: 'Superstar Ability Saves',
-    xfactor_superstarability_hits: 'Superstar Ability Hits',
-    xfactor_superstarability_stick_checks: 'Superstar Ability Stick Checks',
+    deflections: 'Deflections'
   };
 
-  // Group stats by category
-  const statGroups = {
+  // Stat groups for table organization
+  const statGroups: { [key: string]: string[] } = {
     general: ['name', 'gp', 'wins', 'losses', 'otl', 'winpct', 'record', 'winnerByDnf', 'DNF'],
     scoring: ['name', 'goals', 'assists', 'points', 'pointspg', 'gwg', 'ppg', 'shg', 'hattricks'],
     shooting: ['name', 'shots', 'shotpct', 'shotspg', 'shotattempts', 'shotonnetpct', 'scrnchances', 'scrngoals'],
@@ -105,35 +89,10 @@ const HockeyStatsDashboard = () => {
     penalties: ['name', 'pim', 'fights', 'fightswon', 'penaltiesdrawn'],
     possession: ['name', 'possession', 'giveaways', 'passes', 'passattempts', 'passpct', 'saucerpasses'],
     breakaways: ['name', 'breakaways', 'breakawaypct', 'brkgoals', 'penaltyshotgoals', 'penaltyattempts', 'penaltyshotpct'],
-    other: ['name', 'toi', 'plusmin', 'dekes', 'dekesmade', 'offsides', 'offsidespg', 'deflections'],
-    xfactor: ['name', 'xfactor_zoneability_goals', 'xfactor_zoneability_assists', 'xfactor_zoneability_saves', 
-              'xfactor_zoneability_hits', 'xfactor_zoneability_stick_checks', 'xfactor_zoneability_times_used',
-              'xfactor_superstarability_goals', 'xfactor_superstarability_assists', 'xfactor_superstarability_saves',
-              'xfactor_superstarability_hits', 'xfactor_superstarability_stick_checks']
+    other: ['name', 'toi', 'plusmin', 'dekes', 'dekesmade', 'offsides', 'offsidespg', 'deflections']
   };
 
   // Stat highlight thresholds
-  interface StatThresholds {
-    goals: { excellent: number; good: number; average: number };
-    assists: { excellent: number; good: number; average: number };
-    points: { excellent: number; good: number; average: number };
-    pointspg: { excellent: number; good: number; average: number };
-    gwg: { excellent: number; good: number; average: number };
-    ppg: { excellent: number; good: number; average: number };
-    shg: { excellent: number; good: number; average: number };
-    hattricks: { excellent: number; good: number; average: number };
-    shotpct: { excellent: number; good: number; average: number };
-    shotonnetpct: { excellent: number; good: number; average: number };
-    hits: { excellent: number; good: number; average: number };
-    bs: { excellent: number; good: number; average: number };
-    takeaways: { excellent: number; good: number; average: number };
-    interceptions: { excellent: number; good: number; average: number };
-    fop: { excellent: number; good: number; average: number };
-    passpct: { excellent: number; good: number; average: number };
-    winpct: { excellent: number; good: number; average: number };
-    plusmin: { excellent: number; good: number; average: number };
-  }
-  
   const statThresholds: StatThresholds = {
     goals: { excellent: 20, good: 10, average: 5 },
     assists: { excellent: 20, good: 10, average: 5 },
@@ -154,19 +113,16 @@ const HockeyStatsDashboard = () => {
     winpct: { excellent: 65, good: 50, average: 40 },
     plusmin: { excellent: 15, good: 5, average: 0 }
   };
-  
-  const getStatColor = (field: string, value: string | number) => {
-    // Convert string to number if needed
+
+  const getStatColor = (field: string, value: string | number): string => {
     const numValue = typeof value === 'string' ? parseFloat(value) : value;
-  
-    // If the value isn't a number or the field doesn't have thresholds, return default
+    
     if (isNaN(numValue) || !(field in statThresholds)) {
       return 'text-gray-100';
     }
-  
+
     const thresholds = statThresholds[field as keyof StatThresholds];
-  
-    // Handle special case for plus/minus
+
     if (field === 'plusmin') {
       if (numValue >= thresholds.excellent) return 'text-green-300 font-bold';
       if (numValue >= thresholds.good) return 'text-green-400';
@@ -176,52 +132,42 @@ const HockeyStatsDashboard = () => {
       if (numValue < 0) return 'text-red-500';
       return 'text-gray-100';
     }
-  
-    // For all other stats
+
     if (numValue >= thresholds.excellent) return 'text-green-300 font-bold';
     if (numValue >= thresholds.good) return 'text-green-400';
     if (numValue >= thresholds.average) return 'text-green-500';
     return 'text-gray-100';
   };
 
-  const formatStatValue = (field: string, value: string | number) => {
+  const formatStatValue = (field: string, value: string | number): string => {
     if (value === null || value === undefined) return '-';
-  
-    // Percentage formatting
+
     if (field.endsWith('pct') || field === 'winpct') {
       return `${value}%`;
     }
-  
-    // Time on ice formatting (assumes value is in seconds)
-    if (field === 'toi') {
-      const minutes = Math.floor(parseInt(value as string) / 60);
-      const seconds = parseInt(value as string) % 60;
-      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+    if (field === 'toi' || field === 'possession') {
+      const seconds = parseInt(value as string);
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
-  
-    // Possession time formatting
-    if (field === 'possession') {
-      const minutes = Math.floor(parseInt(value as string) / 60);
-      const seconds = parseInt(value as string) % 60;
-      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    }
-  
+
     return value.toString();
   };
+
   const fetchStats = async () => {
     setLoading(true);
     setError('');
     
     try {
-      // Fetch data from the local API endpoint instead of an external URL
       const response = await fetch('/api/hockey-stats');
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
       const data = await response.json();
-      setStats(data.members || []);
+      setCurrentStats(data.current);
+      setPreviousStats(data.previous);
+      setAvailableDates(data.dates);
     } catch (error) {
       console.error('Error fetching stats:', error);
       setError('Failed to fetch stats. Please try again.');
@@ -230,30 +176,95 @@ const HockeyStatsDashboard = () => {
     }
   };
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+  
+    setLoading(true);
+    setError('');
+  
+    const formData = new FormData();
+    formData.append('file', file);
+  
+    try {
+      const response = await fetch('/api/hockey-stats', {
+        method: 'POST',
+        body: formData,
+      });
+  
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      
+      const data = await response.json();
+      setCurrentStats(data.current);
+      setPreviousStats(data.previous);
+      setAvailableDates(data.dates);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      setError('Failed to upload file. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+const getStatDifference = (current: PlayerStats, previousStats: StatHistory | null, field: string): string | null => {
+  if (!showComparison || !previousStats) return null;
+  
+  const previousPlayer = previousStats.stats.find(p => p.name === current.name);
+  if (!previousPlayer) return null;
+
+  const currentVal = parseFloat(current[field] as string);
+  const previousVal = parseFloat(previousPlayer[field] as string);
+  
+  if (isNaN(currentVal) || isNaN(previousVal)) return null;
+  
+  const diff = currentVal - previousVal;
+  return diff === 0 ? null : diff.toFixed(1);
+};
+
+const formatStatWithDifference = (field: string, value: string | number, player: PlayerStats) => {
+  const formattedValue = formatStatValue(field, value);
+  if (!showComparison) return formattedValue;
+
+  const diff = getStatDifference(player, previousStats, field);
+  
+  if (!diff) return formattedValue;
+  
+  const diffNum = parseFloat(diff);
+  const diffClass = diffNum > 0 ? 'text-green-400' : 'text-red-400';
+  return (
+    <span>
+      {formattedValue}{' '}
+      <span className={diffClass}>
+        ({diffNum > 0 ? '+' : ''}{diff})
+      </span>
+    </span>
+  );
+};
 
   const handleSort = (field: string) => {
     setSortField(field);
     setSortDirection(current => current === 'asc' ? 'desc' : 'asc');
   };
 
-  const sortedStats = [...stats].sort((a, b) => {
+  const sortedStats = [...(currentStats?.stats || [])].sort((a, b) => {
     if (!sortField) return 0;
-
+  
     let aVal = a[sortField];
     let bVal = b[sortField];
-
+  
     if (typeof aVal === 'string') aVal = parseFloat(aVal) || aVal;
     if (typeof bVal === 'string') bVal = parseFloat(bVal) || bVal;
-
+  
     if (sortDirection === 'asc') {
       return aVal > bVal ? 1 : -1;
     } else {
       return aVal < bVal ? 1 : -1;
     }
   });
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-6">
@@ -263,20 +274,67 @@ const HockeyStatsDashboard = () => {
             <Trophy className="w-8 h-8 text-yellow-400" />
             <h1 className="text-3xl font-bold">Hockey Stats Dashboard</h1>
           </div>
-          <Button 
-            onClick={fetchStats}
-            className="bg-blue-500 hover:bg-blue-600"
-            disabled={loading}
-          >
-            <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Loading...' : 'Refresh Stats'}
-          </Button>
+          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+  <Checkbox
+    id="comparison"
+    checked={showComparison}
+    onCheckedChange={(checked) => setShowComparison(!!checked)}
+    className="border-gray-400 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+  />
+  <label 
+    htmlFor="comparison" 
+    className="text-gray-200 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+  >
+    Show Changes
+  </label>
+</div>
+            <Button
+              onClick={() => document.getElementById('file-upload')?.click()}
+              className="bg-green-600 hover:bg-green-700"
+              disabled={loading}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Upload Stats
+            </Button>
+            <input
+              id="file-upload"
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <Button 
+              onClick={fetchStats}
+              className="bg-blue-500 hover:bg-blue-600"
+              disabled={loading}
+            >
+              <RefreshCcw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Loading...' : 'Refresh Stats'}
+            </Button>
+          </div>
         </div>
 
         {error && (
           <Card className="bg-red-900/50 border-red-700 mb-8">
             <CardContent className="pt-6">
               <p className="text-red-200">{error}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {availableDates.length > 0 && (
+          <Card className="bg-slate-800 border-slate-700 mb-8">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Available Dates:</span>
+                {availableDates.map((date, index) => (
+                  <span key={date} className={index === 0 ? 'text-green-400' : 'text-gray-400'}>
+                    {date}
+                    {index < availableDates.length - 1 && ', '}
+                  </span>
+                ))}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -317,7 +375,7 @@ const HockeyStatsDashboard = () => {
                           key={field} 
                           className={`p-2 ${field === 'name' ? 'text-gray-100' : getStatColor(field, player[field])}`}
                         >
-                          {formatStatValue(field, player[field])}
+                          {formatStatWithDifference(field, player[field], player)}
                         </td>
                       ))}
                     </tr>
