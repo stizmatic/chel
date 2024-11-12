@@ -1,10 +1,8 @@
-// /app/api/hockey-stats/route.ts
 import { NextResponse } from 'next/server';
 import { StatHistory, PlayerStats } from '@/types';
 import fs from 'fs/promises';
 import path from 'path';
 
-// Define additional types needed for the API
 interface StatsFile {
   members: PlayerStats[];
   positionCount?: {
@@ -22,24 +20,33 @@ interface ApiResponse {
   error?: string;
 }
 
-// Define the data directory path
-const DATA_DIR = path.join(process.cwd(), 'data', 'hockey-stats');
+// Update the data directory path to be inside src
+const DATA_DIR = path.join(process.cwd(), 'src', 'data', 'hockey-stats');
 
-// Ensure the data directory exists
-async function ensureDataDir(): Promise<void> {
-  try {
-    await fs.access(DATA_DIR);
-  } catch {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-  }
-}
+// Function to get the initial stats file path
+const getInitialStatsPath = () => {
+  return path.join(process.cwd(), 'src', 'data', 'hockey-stats', 'initial-stats.json');
+};
 
-// Get all stat files sorted by date (newest first)
+// Modified getStatFiles to handle initial stats
 async function getStatFiles(): Promise<StatHistory[]> {
-  await ensureDataDir();
-  
   try {
-    const files = await fs.readdir(DATA_DIR);
+    // Try to read the directory
+    let files: string[] = [];
+    try {
+      files = await fs.readdir(DATA_DIR);
+    } catch {
+      // If directory doesn't exist or is empty, fall back to initial stats
+      const initialStats = await fs.readFile(getInitialStatsPath(), 'utf-8');
+      const parsed = JSON.parse(initialStats) as StatsFile;
+      const today = new Date().toISOString().split('T')[0];
+      
+      return [{
+        date: today,
+        stats: parsed.members
+      }];
+    }
+
     const statFiles = await Promise.all(
       files
         .filter(file => file.endsWith('.json'))
@@ -58,13 +65,40 @@ async function getStatFiles(): Promise<StatHistory[]> {
         })
     );
 
-    // Filter out any null results and sort by date
-    return statFiles
+    // Filter out null results and sort by date
+    const validFiles = statFiles
       .filter((file): file is StatHistory => file !== null)
       .sort((a, b) => b.date.localeCompare(a.date));
+
+    // If no valid files found, fall back to initial stats
+    if (validFiles.length === 0) {
+      const initialStats = await fs.readFile(getInitialStatsPath(), 'utf-8');
+      const parsed = JSON.parse(initialStats) as StatsFile;
+      const today = new Date().toISOString().split('T')[0];
+      
+      return [{
+        date: today,
+        stats: parsed.members
+      }];
+    }
+
+    return validFiles;
   } catch (error) {
     console.error('Error reading stat files:', error);
-    return [];
+    // Final fallback to initial stats
+    try {
+      const initialStats = await fs.readFile(getInitialStatsPath(), 'utf-8');
+      const parsed = JSON.parse(initialStats) as StatsFile;
+      const today = new Date().toISOString().split('T')[0];
+      
+      return [{
+        date: today,
+        stats: parsed.members
+      }];
+    } catch (finalError) {
+      console.error('Critical error: Could not read initial stats:', finalError);
+      return [];
+    }
   }
 }
 
@@ -93,8 +127,31 @@ function isValidStatsFile(content: string | StatsFile): boolean {
   }
 }
 
+// Ensure the data directory exists
+async function ensureDataDir(): Promise<void> {
+  try {
+    await fs.access(DATA_DIR);
+  } catch {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    
+    // Copy initial stats file to the new directory if it doesn't exist
+    try {
+      const initialStats = await fs.readFile(getInitialStatsPath(), 'utf-8');
+      const today = new Date().toISOString().split('T')[0];
+      await fs.writeFile(
+        path.join(DATA_DIR, `${today}.json`),
+        initialStats,
+        'utf-8'
+      );
+    } catch (error) {
+      console.error('Error copying initial stats:', error);
+    }
+  }
+}
+
 export async function GET(): Promise<NextResponse<ApiResponse>> {
   try {
+    await ensureDataDir();
     const files = await getStatFiles();
     
     return NextResponse.json({
@@ -115,6 +172,7 @@ export async function GET(): Promise<NextResponse<ApiResponse>> {
     );
   }
 }
+
 
 export async function POST(request: Request): Promise<NextResponse<ApiResponse>> {
   try {
